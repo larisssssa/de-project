@@ -4,6 +4,7 @@ Usage:
     python -m pipeline.extract profile "science fiction"   # sample call, field fill rates, no landing
     python -m pipeline.extract land                         # full run for DEFAULT_SUBJECTS
     python -m pipeline.extract land fantasy mystery         # specific subjects
+    python -m pipeline.extract counts                       # true catalog counts per subject x decade
 
 Raw pages are stored byte-for-byte as returned, keyed by run date, so a retry
 or a re-run on the same day rewrites the same keys instead of duplicating data.
@@ -185,6 +186,74 @@ def extract_and_land(
     return keys
 
 
+DECADES = list(range(1900, 2030, 10))  # 1900s .. 2020s; pre-1900 is out of scope
+
+
+@retry(
+    retry=retry_if_exception(_is_retryable),
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(min=1, max=30),
+    reraise=True,
+)
+def fetch_decade_count(
+    client: httpx.Client, subject: str, decade: int
+) -> httpx.Response:
+    """One tiny request: numFound for a subject within a decade of first publication."""
+    resp = client.get(
+        BASE_URL,
+        params={
+            "q": f'subject:"{subject}" AND first_publish_year:[{decade} TO {decade + 9}]',
+            "fields": "key",
+            "limit": 1,  # we only want numFound, not the records
+        },
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return resp
+
+
+def counts_key(subject: str, run_date: str, decade: int) -> str:
+    return (
+        f"openlibrary_counts/subject={_slug(subject)}/{run_date}/decade-{decade}.json"
+    )
+
+
+def extract_decade_counts(
+    subjects: list[str] | None = None,
+    run_date: str | None = None,
+    log=print,
+) -> list[str]:
+    """Land true catalog counts per subject and decade (one small request each).
+
+    Unlike the sampled page pulls, numFound reflects the whole catalog, so these
+    counts answer question 1 without the relevance-ranking bias of a capped sample.
+    """
+    subjects = subjects or DEFAULT_SUBJECTS
+    run_date = run_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    bucket = os.getenv("RAW_BUCKET", "raw")
+
+    s3 = _s3()
+    _ensure_bucket(s3, bucket)
+    keys: list[str] = []
+
+    with httpx.Client(headers={"User-Agent": _user_agent()}) as client:
+        for subject in subjects:
+            for decade in DECADES:
+                resp = fetch_decade_count(client, subject, decade)
+                key = counts_key(subject, run_date, decade)
+                s3.put_object(
+                    Bucket=bucket,
+                    Key=key,
+                    Body=resp.content,
+                    ContentType="application/json",
+                )
+                keys.append(key)
+                time.sleep(MIN_INTERVAL_SECONDS)
+            log(f"{subject}: landed {len(DECADES)} decade counts")
+
+    return keys
+
+
 def profile(subject: str) -> None:
     """One sample page: show which fields are populated. Nothing is landed."""
     with httpx.Client(headers={"User-Agent": _user_agent()}) as client:
@@ -211,5 +280,7 @@ if __name__ == "__main__":
         profile(args[0] if args else "fantasy")
     elif cmd == "land":
         extract_and_land(args or None)
+    elif cmd == "counts":
+        extract_decade_counts(args or None)
     else:
         sys.exit(__doc__)
