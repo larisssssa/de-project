@@ -52,6 +52,22 @@ FROM pages
 """
 
 
+COUNTS_GLOB = f"s3://{RAW_BUCKET}/openlibrary_counts/subject=*/*/decade-*.json"
+
+COUNTS_SQL = f"""
+CREATE OR REPLACE TABLE bronze.openlibrary_decade_counts AS
+SELECT
+    numFound,
+    numFoundExact,
+    filename                                                          AS _source_file,
+    regexp_extract(filename, 'subject=([^/]+)/', 1)                   AS _queried_subject,
+    regexp_extract(filename, '/(\\d{{4}}-\\d{{2}}-\\d{{2}})/', 1)::date AS _run_date,
+    regexp_extract(filename, 'decade-(\\d+)\\.json', 1)::int           AS _decade,
+    current_timestamp                                                 AS _loaded_at
+FROM read_json('{COUNTS_GLOB}', filename = true, sample_size = -1, union_by_name = true)
+"""
+
+
 def connect() -> duckdb.DuckDBPyConnection:
     Path(DUCKDB_PATH).parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(DUCKDB_PATH)
@@ -86,6 +102,12 @@ def load_bronze(log=print) -> int:
             """).fetchall()
         for subject, run_date, works in summary:
             log(f"  {subject:<22} {run_date}  {works:>6}")
+
+        con.execute(COUNTS_SQL)
+        count_rows = con.execute(
+            "SELECT count(*) FROM bronze.openlibrary_decade_counts"
+        ).fetchone()[0]
+        log(f"bronze.openlibrary_decade_counts: {count_rows} rows from {COUNTS_GLOB}")
         return rows
     finally:
         con.close()  # release the file lock so dbt can write
