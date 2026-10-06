@@ -1,0 +1,22 @@
+[project]
+name = "final"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Larissa Ferreira", email = "larissadferr@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "boto3>=1.43.108",
+    "httpx>=0.28.1",
+    "python-dotenv>=1.2.4",
+    "tenacity>=9.1.4",
+]
+
+[project.scripts]
+final = "final:main"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
