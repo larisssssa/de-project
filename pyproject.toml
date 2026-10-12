@@ -9,9 +9,12 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "boto3>=1.43.108",
+    "dbt-duckdb>=1.11.0",
     "duckdb>=1.5.6",
     "httpx>=0.28.1",
+    "prefect>=3.8.8",
     "python-dotenv>=1.2.4",
+    "streamlit>=1.65.0",
     "tenacity>=9.1.4",
 ]
 
