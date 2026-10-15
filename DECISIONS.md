@@ -7,10 +7,15 @@
 
 By the end of this, I'll be able to answer:
 
-1. **Which subjects have grown fastest in published works by decade?**
-2. **Do works with more editions earn higher ratings and more want-to-read interest, and how does that differ by subject?**
+1. **Which subjects have added the most works per decade of first publication, from the 1900s through the 2020s, and which are growing fastest?**
+2. **Among the most prominent works in each subject, do works with more editions earn higher ratings and more want-to-read interest, and how does that differ by subject?**
 
 …about **books in the Open Library catalog**.
+
+**What each question runs on, and its limits**
+
+- **Question 1** uses true catalog counts (`numFound` per subject and decade), not the sampled pages, so it isn't affected by relevance ranking. Works first published before 1900 are excluded by design. The 2020s are a partial decade (through 2026), so I compare it on a per-year basis or flag it as incomplete rather than treating it as a full decade.
+- **Question 2** uses a relevance-ranked sample (up to ~1,500 works per subject), so it describes *prominent* works, not the whole catalog. Ratings are only compared above a minimum-ratings threshold, since averages from a handful of ratings are unreliable.
 
 ---
 
@@ -28,7 +33,8 @@ search.json  ──►  raw JSON pages ──►  bronze (as-is)  ──►   si
 ## 1. Source — Open Library Search API
 
 - **What:** `https://openlibrary.org/search.json`, one query per subject (`q=subject:<name>`), paginated with `limit=100` and a `page` loop that stops on an empty page.
-- **Sample size:** ~15–20 subjects, capped at ~1,000–2,000 works each. **TODO:** record final subject list and row count.
+- **Sample size:** ~15–20 subjects, capped at ~1,000–2,000 works each (for question 2). **TODO:** record final subject list and row count.
+- **Second landing, for question 1:** one small request per subject and decade (`first_publish_year:[1990 TO 1999]`, `limit=1`) landed under `openlibrary_counts/`. Only `numFound` is used, which reflects the whole catalog instead of the ranked sample. **TODO:** record the result of the one-subject range-filter check.
 - **Terms / etiquette:** The API is intended for low-volume use, not bulk access. Requests send a `User-Agent` with a contact email, which earns a higher rate limit than anonymous requests. **TODO:** confirm current limits and terms at https://openlibrary.org/developers/api and link them here.
 - **Update frequency:** Community-edited catalog; changes slowly. **TODO:** note observed day-to-day change after a few runs.
 - **Why this source:** Real pagination and rate-limit handling, nested array fields that need real silver work, and a year column plus subject for trend and group-by analysis.
@@ -51,9 +57,9 @@ search.json  ──►  raw JSON pages ──►  bronze (as-is)  ──►   si
 
 | Layer | Models (draft) | Notes |
 | --- | --- | --- |
-| Bronze | `bronze_works` | Raw JSON loaded as-is, plus `_source_file` and `_loaded_at` |
+| Bronze | `openlibrary_works`, `openlibrary_decade_counts` | Raw JSON loaded as-is, plus lineage columns (`_source_file`, `_queried_subject`, `_run_date`, `_loaded_at`) |
 | Silver | `silver_works`, `silver_work_subjects`, `silver_work_authors` | Flatten arrays into bridge tables, normalize subject labels, cast types, handle missing ratings |
-| Gold | `gold_works_by_subject_decade`, `gold_edition_popularity_by_subject` | One table per question |
+| Gold | `gold_works_by_subject_decade` (from decade counts, question 1), `gold_edition_popularity_by_subject` (from the works sample, question 2) | One table per question |
 
 **Tests (need at least 4; draft has 6)**
 - `unique` + `not_null` on `silver_works.work_key`
